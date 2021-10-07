@@ -34,6 +34,14 @@ parser = argparse.ArgumentParser(
 parser.add_argument(
     "-m", "--model", default="lanegcn", type=str, metavar="MODEL", help="model name"
 )
+parser.add_argument(
+    "-n", "--numFiles", default=1, type=int, help="number of CSV files to preprocess"
+)
+parser.add_argument(
+    "--map_param", default="/home/carla_challenge/Desktop/francis/Scenic/tests/formats/opendrive/maps/CARLA/Town05.xodr", type=str, help="carla map path")
+parser.add_argument(
+    "-w", "--worker_num", default=0, type=int, help="Parallel worker number"
+)
 
 
 def main():
@@ -41,7 +49,7 @@ def main():
     args = parser.parse_args()
     model = import_module(args.model)
     print(args.model)
-    config, *_ = model.get_model()
+    config, *_ = model.get_model(args.worker_num)
 
     config["preprocess"] = False  # we use raw data to generate preprocess data
     config["val_workers"] = 32
@@ -51,122 +59,11 @@ def main():
 
     os.makedirs(os.path.dirname(config['preprocess_train']),exist_ok=True)    
 
+    test(config, args.map_param, args.numFiles)
 
 
-    val(config)
-    test(config)
-    train(config)
-
-
-def train(config):
-    # Data loader for training set
-    dataset = Dataset(config["train_split"], config, train=True)
-    train_loader = DataLoader(
-        dataset,
-        batch_size=config["batch_size"],
-        num_workers=config["workers"],
-        shuffle=False,
-        collate_fn=collate_fn,
-        pin_memory=True,
-        drop_last=False,
-    )
-
-    stores = [None for x in range(205942)]
-    t = time.time()
-    for i, data in enumerate(tqdm(train_loader)):
-        data = dict(data)
-        for j in range(len(data["idx"])):
-            store = dict()
-            for key in [
-                "idx",
-                "city",
-                "feats",
-                "ctrs",
-                "orig",
-                "theta",
-                "rot",
-                "gt_preds",
-                "has_preds",
-                "graph",
-            ]:
-                store[key] = to_numpy(data[key][j])
-                if key in ["graph"]:
-                    store[key] = to_int16(store[key])
-            stores[store["idx"]] = store
-
-        if (i + 1) % 100 == 0:
-            print(i, time.time() - t)
-            t = time.time()
-
-
-
-    dataset = PreprocessDataset(stores, config, train=True)
-    data_loader = DataLoader(
-        dataset,
-        batch_size=config['batch_size'],
-        num_workers=config['workers'],
-        shuffle=False,
-        collate_fn=from_numpy,
-        pin_memory=True,
-        drop_last=False)
-
-    modify(config, data_loader,config["preprocess_train"])
-
-
-def val(config):
-    # Data loader for validation set
-    dataset = Dataset(config["val_split"], config, train=False)
-    val_loader = DataLoader(
-        dataset,
-        batch_size=config["val_batch_size"],
-        num_workers=config["val_workers"],
-        shuffle=False,
-        collate_fn=collate_fn,
-        pin_memory=True,
-    )
-    stores = [None for x in range(39472)]
-
-    t = time.time()
-    for i, data in enumerate(tqdm(val_loader)):
-        data = dict(data)
-        for j in range(len(data["idx"])):
-            store = dict()
-            for key in [
-                "idx",
-                "city",
-                "feats",
-                "ctrs",
-                "orig",
-                "theta",
-                "rot",
-                "gt_preds",
-                "has_preds",
-                "graph",
-            ]:
-                store[key] = to_numpy(data[key][j])
-                if key in ["graph"]:
-                    store[key] = to_int16(store[key])
-            stores[store["idx"]] = store
-
-        if (i + 1) % 100 == 0:
-            print(i, time.time() - t)
-            t = time.time()
-
-    dataset = PreprocessDataset(stores, config, train=False)
-    data_loader = DataLoader(
-        dataset,
-        batch_size=config['batch_size'],
-        num_workers=config['workers'],
-        shuffle=False,
-        collate_fn=from_numpy,
-        pin_memory=True,
-        drop_last=False)
-
-    modify(config, data_loader,config["preprocess_val"])
-
-
-def test(config):
-    dataset = Dataset(config["test_split"], config, train=False)
+def test(config, map_param, N):
+    dataset = Dataset(config["test_split"], config, map_param, train=False)
     test_loader = DataLoader(
         dataset,
         batch_size=config["val_batch_size"],
@@ -175,7 +72,7 @@ def test(config):
         collate_fn=collate_fn,
         pin_memory=True,
     )
-    stores = [None for x in range(78143)]
+    stores = [None for x in range(N)]
 
     t = time.time()
     for i, data in enumerate(tqdm(test_loader)):

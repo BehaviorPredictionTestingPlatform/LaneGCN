@@ -9,6 +9,7 @@ from fractions import gcd
 from numbers import Number
 
 import torch
+device = torch.device('cpu')
 from torch import Tensor, nn
 from torch.nn import functional as F
 
@@ -59,7 +60,7 @@ config["train_split"] = os.path.join(
     root_path, "dataset/train/data"
 )
 config["val_split"] = os.path.join(root_path, "dataset/val/data")
-config["test_split"] = os.path.join(root_path, "dataset/test_obs/data")
+config["test_split"] = os.path.join(root_path, "dataset/test_obs")
 
 # Preprocessed Dataset
 config["preprocess"] = True # whether use preprocess or not
@@ -69,7 +70,7 @@ config["preprocess_train"] = os.path.join(
 config["preprocess_val"] = os.path.join(
     root_path,"dataset", "preprocess", "val_crs_dist6_angle90.p"
 )
-config['preprocess_test'] = os.path.join(root_path, "dataset",'preprocess', 'test_test.p')
+config['preprocess_test'] = os.path.join(root_path, "dataset",'preprocess')
 
 """Model"""
 config["rot_aug"] = False
@@ -110,9 +111,13 @@ class Net(nn.Module):
         4. PredNet: prediction header for motion forecasting using 
            feature from A2A
     """
-    def __init__(self, config):
+    def __init__(self, config, worker_num):
         super(Net, self).__init__()
         self.config = config
+
+        # config alterations to support parallel execution
+        self.config['preprocess_test'] = os.path.join(config['preprocess_test'], f'test_test_{worker_num}.p')
+        self.config['test_split'] = os.path.join(config['test_split'], f'data_{worker_num}')
 
         self.actor_net = ActorNet(config)
         self.map_net = MapNet(config)
@@ -675,7 +680,7 @@ class Att(nn.Module):
         for i in range(batch_size):
             dist = agt_ctrs[i].view(-1, 1, 2) - ctx_ctrs[i].view(1, -1, 2)
             dist = torch.sqrt((dist ** 2).sum(2))
-            mask = dist <= dist_th
+            mask = dist <= dist_th + 4  # NOTE: Fails without adding 4 to threshold...
 
             idcs = torch.nonzero(mask, as_tuple=False)
             if len(idcs) == 0:
@@ -899,12 +904,15 @@ def pred_metrics(preds, gt_preds, has_preds):
     return ade1, fde1, ade, fde, min_idcs
 
 
-def get_model():
-    net = Net(config)
-    net = net.cuda()
+def get_model(worker_num):
+    net = Net(config, worker_num)
+    #net = net.cuda()
+    net = net.cpu()
 
-    loss = Loss(config).cuda()
-    post_process = PostProcess(config).cuda()
+    #loss = Loss(config).cuda()
+    loss = Loss(config).cpu()
+    #post_process = PostProcess(config).cuda()
+    post_process = PostProcess(config).cpu()
 
     params = net.parameters()
     opt = Optimizer(params, config)
