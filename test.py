@@ -46,10 +46,10 @@ parser.add_argument(
     "--split", type=str, default="test", help='data split, "val" or "test"'
 )
 parser.add_argument(
-    "--weight", default="/home/carla_challenge/Desktop/francis/LaneGCN/36.000.ckpt", type=str, metavar="WEIGHT", help="checkpoint path"
+    "--weight", type=str, metavar="WEIGHT", help="checkpoint path"
 )
 parser.add_argument(
-    "--map_path", default="/home/carla_challenge/Desktop/francis/Scenic/tests/formats/opendrive/maps/CARLA/Town05.xodr", type=str, help="absolute path to carla map"
+    "--map_path", type=str, help="absolute path to carla map"
 )
 parser.add_argument(
     "-w", "--worker_num", default=0, type=int, help="Parallel worker number"
@@ -65,7 +65,7 @@ def main():
     # load pretrain model
     ckpt_path = args.weight
     if not os.path.isabs(ckpt_path):
-        ckpt_path = os.path.join(config["save_dir"], ckpt_path)
+        ckpt_path = os.path.join(root_path, ckpt_path)
     ckpt = torch.load(ckpt_path, map_location=lambda storage, loc: storage)
     load_pretrain(net, ckpt["state_dict"])
     net.eval()
@@ -95,7 +95,7 @@ def main():
     import csv
     for _, pred in preds.items():
         for i, mode in enumerate(pred):
-            with open(f"{config['save_dir']}/predictions_{args.worker_num}_{i}.csv", 'w', newline='') as csvfile:
+            with open(f"{config['save_dir']}/predictions_{args.worker_num}_{i}.csv", 'w+', newline='') as csvfile:
                 writer = csv.writer(csvfile)
                 writer.writerow(['X', 'Y'])
                 for row in mode:
